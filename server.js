@@ -6,7 +6,7 @@ const fetch = require("node-fetch");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const LIPILA_API_KEY = process.env.LIPILA_API_KEY || "YOUR_API_KEY";
+const LIPILA_API_KEY = process.env.LIPILA_API_KEY || "";
 const LIPILA_BASE_URL = "https://api.lipila.dev/api/v1";
 
 const CALLBACK_URL = process.env.CALLBACK_URL || "https://your-server.com/api/payments/callback";
@@ -17,7 +17,33 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+async function safeJson(response) {
+  const text = await response.text();
+  if (!text || text.trim() === "") {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
+  }
+}
+
+function apiKeyGuard(res) {
+  if (!LIPILA_API_KEY) {
+    res.status(500).json({
+      success: false,
+      error: "MISSING_API_KEY",
+      message: "LIPILA_API_KEY is not set. Add it in your Render environment variables.",
+    });
+    return true;
+  }
+  return false;
+}
+
 app.post("/api/payments/mobile-money", async (req, res) => {
+  if (apiKeyGuard(res)) return;
+
   const { accountNumber, amount, narration, currency, email, referenceId } = req.body;
 
   if (!accountNumber || !amount) {
@@ -51,13 +77,24 @@ app.post("/api/payments/mobile-money", async (req, res) => {
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
+    const data = await safeJson(response);
+
+    if (response.status === 401 || response.status === 403) {
+      return res.status(response.status).json({
+        success: false,
+        error: response.status === 401 ? "UNAUTHORIZED" : "FORBIDDEN",
+        message: "Your Lipila API key is invalid or missing. Check the LIPILA_API_KEY environment variable in Render.",
+        httpStatus: response.status,
+        details: data,
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({
         success: false,
-        error: data.error || "LIPILA_ERROR",
-        message: data.message || "Failed to initiate mobile money payment",
+        error: "LIPILA_ERROR",
+        message: (data && data.message) || `Lipila returned HTTP ${response.status}`,
+        httpStatus: response.status,
         details: data,
       });
     }
@@ -79,13 +116,15 @@ app.post("/api/payments/mobile-money", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "SERVER_ERROR",
-      message: "Internal server error while contacting Lipila",
+      message: "Failed to reach Lipila API. Check your internet/server and try again.",
       details: err.message,
     });
   }
 });
 
 app.post("/api/payments/card", async (req, res) => {
+  if (apiKeyGuard(res)) return;
+
   const {
     firstName,
     lastName,
@@ -151,13 +190,24 @@ app.post("/api/payments/card", async (req, res) => {
       body: JSON.stringify(payload),
     });
 
-    const data = await response.json();
+    const data = await safeJson(response);
+
+    if (response.status === 401 || response.status === 403) {
+      return res.status(response.status).json({
+        success: false,
+        error: response.status === 401 ? "UNAUTHORIZED" : "FORBIDDEN",
+        message: "Your Lipila API key is invalid or missing. Check the LIPILA_API_KEY environment variable in Render.",
+        httpStatus: response.status,
+        details: data,
+      });
+    }
 
     if (!response.ok) {
       return res.status(response.status).json({
         success: false,
-        error: data.error || "LIPILA_ERROR",
-        message: data.message || "Failed to initiate card payment",
+        error: "LIPILA_ERROR",
+        message: (data && data.message) || `Lipila returned HTTP ${response.status}`,
+        httpStatus: response.status,
         details: data,
       });
     }
@@ -181,13 +231,15 @@ app.post("/api/payments/card", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "SERVER_ERROR",
-      message: "Internal server error while contacting Lipila",
+      message: "Failed to reach Lipila API. Check your internet/server and try again.",
       details: err.message,
     });
   }
 });
 
 app.get("/api/payments/status", async (req, res) => {
+  if (apiKeyGuard(res)) return;
+
   const { referenceId } = req.query;
 
   if (!referenceId) {
@@ -210,7 +262,16 @@ app.get("/api/payments/status", async (req, res) => {
       }
     );
 
-    const data = await response.json();
+    const data = await safeJson(response);
+
+    if (response.status === 401 || response.status === 403) {
+      return res.status(response.status).json({
+        success: false,
+        error: response.status === 401 ? "UNAUTHORIZED" : "FORBIDDEN",
+        message: "Your Lipila API key is invalid or missing. Check the LIPILA_API_KEY environment variable in Render.",
+        httpStatus: response.status,
+      });
+    }
 
     if (response.status === 404) {
       return res.status(404).json({
@@ -223,8 +284,9 @@ app.get("/api/payments/status", async (req, res) => {
     if (!response.ok) {
       return res.status(response.status).json({
         success: false,
-        error: data.error || "LIPILA_ERROR",
-        message: data.message || "Failed to retrieve transaction status",
+        error: "LIPILA_ERROR",
+        message: (data && data.message) || `Lipila returned HTTP ${response.status}`,
+        httpStatus: response.status,
         details: data,
       });
     }
@@ -247,7 +309,7 @@ app.get("/api/payments/status", async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "SERVER_ERROR",
-      message: "Internal server error while checking transaction status",
+      message: "Failed to reach Lipila API. Check your internet/server and try again.",
       details: err.message,
     });
   }
@@ -256,32 +318,10 @@ app.get("/api/payments/status", async (req, res) => {
 app.post("/api/payments/callback", (req, res) => {
   const payload = req.body;
 
-  const {
-    referenceId,
-    currency,
-    amount,
-    accountNumber,
-    status,
-    paymentType,
-    type,
-    ipAddress,
-    identifier,
-    message,
-    externalId,
-  } = payload;
+  const { referenceId, currency, amount, accountNumber, status, paymentType, type, ipAddress, identifier, message, externalId } = payload;
 
   console.log("[Lipila Callback] Received payment notification:", {
-    referenceId,
-    status,
-    paymentType,
-    amount,
-    currency,
-    accountNumber,
-    type,
-    identifier,
-    message,
-    externalId,
-    ipAddress,
+    referenceId, status, paymentType, amount, currency, accountNumber, type, identifier, message, externalId, ipAddress,
   });
 
   if (status === "Successful") {
@@ -299,48 +339,28 @@ app.get("/api/payments/methods", (_req, res) => {
   return res.status(200).json({
     success: true,
     paymentMethods: [
-      {
-        id: "airtel_money",
-        name: "Airtel Money",
-        type: "mobile_money",
-        paymentType: "AirtelMoney",
-        description: "Pay using your Airtel Money wallet",
-        prefix: ["097", "096"],
-      },
-      {
-        id: "mtn_money",
-        name: "MTN Money",
-        type: "mobile_money",
-        paymentType: "MtnMoney",
-        description: "Pay using your MTN Mobile Money wallet. If prompt is delayed, dial *115#",
-        prefix: ["096", "076"],
-      },
-      {
-        id: "zamtel_kwacha",
-        name: "Zamtel Kwacha",
-        type: "mobile_money",
-        paymentType: "ZamtelKwacha",
-        description: "Pay using your Zamtel Kwacha wallet",
-        prefix: ["095"],
-      },
-      {
-        id: "visa_mastercard",
-        name: "Visa / Mastercard",
-        type: "card",
-        paymentType: "Card",
-        description: "Pay using your Visa or Mastercard",
-        brands: ["Visa", "Mastercard"],
-      },
+      { id: "airtel_money", name: "Airtel Money", type: "mobile_money", paymentType: "AirtelMoney", description: "Pay using your Airtel Money wallet", prefix: ["097", "096"] },
+      { id: "mtn_money", name: "MTN Money", type: "mobile_money", paymentType: "MtnMoney", description: "Pay using your MTN Mobile Money wallet. If prompt is delayed, dial *115#", prefix: ["096", "076"] },
+      { id: "zamtel_kwacha", name: "Zamtel Kwacha", type: "mobile_money", paymentType: "ZamtelKwacha", description: "Pay using your Zamtel Kwacha wallet", prefix: ["095"] },
+      { id: "visa_mastercard", name: "Visa / Mastercard", type: "card", paymentType: "Card", description: "Pay using your Visa or Mastercard", brands: ["Visa", "Mastercard"] },
     ],
   });
 });
 
 app.get("/api/healthz", (_req, res) => {
-  return res.status(200).json({ status: "ok" });
+  return res.status(200).json({
+    status: "ok",
+    apiKeyConfigured: !!LIPILA_API_KEY,
+  });
 });
 
 app.listen(PORT, () => {
   console.log(`Lipila Payment Server running on port ${PORT}`);
+  if (!LIPILA_API_KEY) {
+    console.warn("WARNING: LIPILA_API_KEY is not set. All payment requests will fail. Add it in Render environment variables.");
+  } else {
+    console.log("LIPILA_API_KEY is configured.");
+  }
   console.log(`Endpoints:`);
   console.log(`  POST /api/payments/mobile-money   — Initiate MoMo payment (Airtel, MTN, Zamtel)`);
   console.log(`  POST /api/payments/card            — Initiate Visa/Mastercard payment`);
@@ -349,3 +369,4 @@ app.listen(PORT, () => {
   console.log(`  GET  /api/payments/methods         — List supported payment methods`);
   console.log(`  GET  /api/healthz                  — Health check`);
 });
+  
