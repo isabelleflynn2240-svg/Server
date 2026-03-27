@@ -6,12 +6,12 @@ const fetch = require("node-fetch");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const LIPILA_API_KEY = process.env.LIPILA_API_KEY || "";
+const LIPILA_API_KEY = "lsk_019d3007-bc83-7c94-8328-62ce52dbde41";
 const LIPILA_BASE_URL = "https://api.lipila.dev/api/v1";
 
-const CALLBACK_URL = process.env.CALLBACK_URL || "https://your-server.com/api/payments/callback";
-const BACK_URL = process.env.BACK_URL || "https://your-site.com/payment-cancelled";
-const REDIRECT_URL = process.env.REDIRECT_URL || "https://your-site.com/payment-success";
+const CALLBACK_URL = "https://server-t4ve.onrender.com/api/payments/callback";
+const BACK_URL = "https://server-t4ve.onrender.com/payment-cancelled";
+const REDIRECT_URL = "https://server-t4ve.onrender.com/payment-success";
 
 app.use(cors());
 app.use(express.json());
@@ -356,11 +356,7 @@ app.get("/api/healthz", (_req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Lipila Payment Server running on port ${PORT}`);
-  if (!LIPILA_API_KEY) {
-    console.warn("WARNING: LIPILA_API_KEY is not set. All payment requests will fail. Add it in Render environment variables.");
-  } else {
-    console.log("LIPILA_API_KEY is configured.");
-  }
+  console.log("LIPILA_API_KEY is hardcoded and ready.");
   console.log(`Endpoints:`);
   console.log(`  POST /api/payments/mobile-money   — Initiate MoMo payment (Airtel, MTN, Zamtel)`);
   console.log(`  POST /api/payments/card            — Initiate Visa/Mastercard payment`);
@@ -369,4 +365,4 @@ app.listen(PORT, () => {
   console.log(`  GET  /api/payments/methods         — List supported payment methods`);
   console.log(`  GET  /api/healthz                  — Health check`);
 });
-  
+    
