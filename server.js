@@ -6,7 +6,7 @@ const fetch = require("node-fetch");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const LIPILA_API_KEY = "lsk_019d3007-bc83-7c94-8328-62ce52dbde41";
+const LIPILA_API_KEY = "lsk_019d3057-5c62-707c-87ed-b7c67ed9c0b3";
 const LIPILA_BASE_URL = "https://api.lipila.dev/api/v1";
 
 const CALLBACK_URL = "https://server-t4ve.onrender.com/api/payments/callback";
